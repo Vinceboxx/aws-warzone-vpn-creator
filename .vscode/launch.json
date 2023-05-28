@@ -1,0 +1,41 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "GUI",
+            "type": "python",
+            "request": "launch",
+            //"program": "${file}",
+            "args": [
+                "--gui"
+            ],
+            "module": "main",
+            "justMyCode": true
+        },
+        {
+            "name": "cli",
+            "type": "python",
+            "request": "launch",
+            //"program": "${file}",
+            "args": [
+                ""
+            ],
+            "module": "main",
+            "justMyCode": true
+        },
+        {
+            "name": "flask",
+            "type": "python",
+            "request": "launch",
+            //"program": "${file}",
+            "args": [
+                ""
+            ],
+            "module": "app",
+            "justMyCode": true
+        }
+    ]
+}

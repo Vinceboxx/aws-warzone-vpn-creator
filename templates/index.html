@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Visualizza istanze EC2</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+
+<body>
+
+    <script>
+        function startInstance(instanceId) {
+            $.ajax({
+                url: '/start-instance',
+                type: 'POST',
+                data: { instance_id: instanceId },
+                success: function (response) {
+                    // Gestisci la risposta del backend qui, se necessario
+                    console.log(response);
+                },
+                error: function (error) {
+                    // Gestisci l'errore qui, se necessario
+                    console.log(error);
+                }
+            });
+            // Aspetta 2 secondi
+            setTimeout(function () {
+                // Chiamata AJAX per aggiornare le istanze
+                $.ajax({
+                    url: '/',
+                    type: 'GET',
+                    success: function (response) {
+                        // Aggiorna il contenuto della pagina principale con i nuovi valori delle istanze
+                        $('body').html(response);
+                    },
+                    error: function (error) {
+                        console.log(error);
+                    }
+                });
+            }, 2000); // Ritardo di 2 secondi (2000 millisecondi)
+        }
+
+        function stopInstance(instanceId) {
+            console.log(instanceId)
+            $.ajax({
+                url: '/stop-instance',
+                type: 'POST',
+                data: { instance_id: instanceId },
+                success: function (response) {
+                    // Gestisci la risposta del backend qui, se necessario
+                    console.log(response);
+                },
+                error: function (error) {
+                    // Gestisci l'errore qui, se necessario
+                    console.log(error);
+                }
+            });
+            // Aspetta 2 secondi
+            setTimeout(function () {
+                // Chiamata AJAX per aggiornare le istanze
+                window.location.reload();
+                $.ajax({
+                    url: '/',
+                    type: 'GET',
+                    success: function (response) {
+                        // Aggiorna il contenuto della pagina principale con i nuovi valori delle istanze
+                        $('body').html(response);
+                    },
+                    error: function (error) {
+                        console.log(error);
+                    }
+                });
+            }, 2000); // Ritardo di 2 secondi (2000 millisecondi)
+        }
+
+        function terminateInstance(instanceId) {
+            $.ajax({
+                url: '/terminate-instance',
+                type: 'POST',
+                data: { instance_id: instanceId },
+                success: function (response) {
+                    // Gestisci la risposta del backend qui, se necessario
+                    setTimeout(function () {
+                        window.location.reload();
+                    }, 2000); // Ricarica la pagina dopo 2 secondi (2000 millisecondi)
+                    console.log(response);
+                },
+                error: function (error) {
+                    // Gestisci l'errore qui, se necessario
+                    console.log(error);
+                }
+            });
+        }
+
+
+        function downloadVPNConfig(instanceId) {
+            // Logica per scaricare il file di configurazione VPN
+        }
+
+        function createInstance(region) {
+            var region = document.getElementById('region').value;
+
+            $.ajax({
+                url: '/create_instance',
+                type: 'POST',
+                data: { region: region },
+                success: function (response) {
+                    // Ricarica la pagina dopo 2 secondi
+                    setTimeout(function () {
+                        window.location.reload();
+                    }, 2000); // Ricarica la pagina dopo 2 secondi (2000 millisecondi)
+                },
+                error: function (error) {
+                    console.log(error);
+                }
+            });
+        }
+
+
+    </script>
+
+
+    <h1>Istanze EC2</h1>
+    <table id="instance-table">
+        <tr>
+            <th>Instance ID</th>
+            <th>Stato</th>
+            <th>Regione</th>
+            <th>IP pubblico</th>
+            <th>AMI ID</th>
+            <th>Nome AMI</th>
+            <th>Azioni</th>
+        </tr>
+        {% for instance in instances %}
+        <tr>
+            <td>{{ instance.instance_id }}</td>
+            <td id="status-{{ instance.instance_id }}">{{ instance.instance_state }}</td>
+            <td>{{ instance.region }}</td>
+            <td>{{ instance.public_ip }}</td>
+            <td>{{ instance.ami_id }}</td>
+            <td>{{ instance.ami_name }}</td>
+
+            <td>
+                <button {% if instance.instance_state=='running' or instance.instance_state=='stopping' %}disabled{%
+                    endif %} onclick="startInstance('{{ instance.instance_id }}')">Start</button>
+                <button {% if instance.instance_state=='stopped' or instance.instance_state=='stopping' %}disabled{%
+                    endif %} onclick="stopInstance('{{ instance.instance_id }}')">Stop</button>
+                <button onclick="terminateInstance('{{ instance.instance_id }}')">Terminate</button>
+                {% if 'openvpn' in instance.ami_name.lower() %}
+                <button onclick="downloadVPNConfig('{{ instance.instance_id }}')">Download VPN Config</button>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+    <h2>Contatore Free Tier</h2>
+    <p>{{ free_tier_remaining }} ore rimanenti della Free Tier</p>
+
+    <h2>Crea una nuova istanza</h2>
+    <label for="region">Seleziona la regione:</label>
+    <select id="region" name="region">
+        {% for region in regions %}
+        <option value="{{ region }}">{{ region }}</option>
+        {% endfor %}
+    </select>
+    <button type="button" onclick="createInstance('{{region}}')">Crea istanza</button>
+
+
+</body>
+
+</html>
