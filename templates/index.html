@@ -1,4 +1,3 @@
-<!DOCTYPE html>
 <html>
 
 <head>
@@ -9,11 +8,11 @@
 <body>
 
     <script>
-        function startInstance(instanceId) {
+        function startInstance(instanceId, region) {
             $.ajax({
                 url: '/start-instance',
                 type: 'POST',
-                data: { instance_id: instanceId },
+                data: { instance_id: instanceId, region : region},
                 success: function (response) {
                     // Gestisci la risposta del backend qui, se necessario
                     console.log(response);
@@ -40,12 +39,12 @@
             }, 2000); // Ritardo di 2 secondi (2000 millisecondi)
         }
 
-        function stopInstance(instanceId) {
+        function stopInstance(instanceId, region) {
             console.log(instanceId)
             $.ajax({
                 url: '/stop-instance',
                 type: 'POST',
-                data: { instance_id: instanceId },
+                data: { instance_id: instanceId, region : region },
                 success: function (response) {
                     // Gestisci la risposta del backend qui, se necessario
                     console.log(response);
@@ -73,11 +72,11 @@
             }, 2000); // Ritardo di 2 secondi (2000 millisecondi)
         }
 
-        function terminateInstance(instanceId) {
+        function terminateInstance(instanceId, region) {
             $.ajax({
                 url: '/terminate-instance',
                 type: 'POST',
-                data: { instance_id: instanceId },
+                data: { instance_id: instanceId, region : region },
                 success: function (response) {
                     // Gestisci la risposta del backend qui, se necessario
                     setTimeout(function () {
@@ -114,7 +113,41 @@
                     console.log(error);
                 }
             });
+            // $.ajax({
+            //     url: '/initialize_server',
+            //     type: 'POST',
+            //     data: { region: region, instance_id: instance_id },
+            //     success: function (response) {
+            //         // Ricarica la pagina dopo 2 secondi
+            //         setTimeout(function () {
+            //             window.location.reload();
+            //         }, 2000); // Ricarica la pagina dopo 2 secondi (2000 millisecondi)
+            //     },
+            //     error: function (error) {
+            //         console.log(error);
+            //     }
+            // });
+
         }
+
+        function initializeServer(instance_id, region) {
+
+            $.ajax({
+                url: '/initialize_server',
+                type: 'POST',
+                data: { region: region, instance_id: instance_id },
+                success: function (response) {
+                    // Ricarica la pagina dopo 2 secondi
+                    console.log(success)
+                },
+                error: function (error) {
+                    console.log(error);
+                }
+            });
+
+
+        }
+
 
 
     </script>
@@ -125,6 +158,7 @@
         <tr>
             <th>Instance ID</th>
             <th>Stato</th>
+            <th>Creazione</th>
             <th>Regione</th>
             <th>IP pubblico</th>
             <th>AMI ID</th>
@@ -135,6 +169,7 @@
         <tr>
             <td>{{ instance.instance_id }}</td>
             <td id="status-{{ instance.instance_id }}">{{ instance.instance_state }}</td>
+            <td>{{ instance.state_reason }}</td>
             <td>{{ instance.region }}</td>
             <td>{{ instance.public_ip }}</td>
             <td>{{ instance.ami_id }}</td>
@@ -142,11 +177,12 @@
 
             <td>
                 <button {% if instance.instance_state=='running' or instance.instance_state=='stopping' %}disabled{%
-                    endif %} onclick="startInstance('{{ instance.instance_id }}')">Start</button>
+                    endif %} onclick="startInstance('{{ instance.instance_id }}', '{{ instance.region }}')">Start</button>
                 <button {% if instance.instance_state=='stopped' or instance.instance_state=='stopping' %}disabled{%
-                    endif %} onclick="stopInstance('{{ instance.instance_id }}')">Stop</button>
-                <button onclick="terminateInstance('{{ instance.instance_id }}')">Terminate</button>
+                    endif %} onclick="stopInstance('{{ instance.instance_id }}', '{{ instance.region }}')">Stop</button>
+                <button onclick="terminateInstance('{{ instance.instance_id }}', '{{ instance.region }}')">Terminate</button>
                 {% if 'openvpn' in instance.ami_name.lower() %}
+                <button onclick="initializeServer('{{ instance.instance_id }}', '{{ instance.region }}')">Initialize</button>
                 <button onclick="downloadVPNConfig('{{ instance.instance_id }}')">Download VPN Config</button>
                 {% endif %}
             </td>

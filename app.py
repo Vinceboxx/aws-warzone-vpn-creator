@@ -3,6 +3,7 @@ import boto3
 from botocore.exceptions import ClientError
 from flask import Flask, render_template, request, send_file
 import paramiko
+import time
 
 app = Flask(__name__)
 
@@ -43,18 +44,44 @@ def get_instances():
                 instance_details = {
                     'instance_id': instance['InstanceId'],
                     'instance_state' : instance['State']['Name'],
+                    'state_reason' : ec2.describe_instance_status(InstanceIds=[instance['InstanceId']])['InstanceStatuses'][0]['InstanceStatus']['Status'],
                     'public_ip': instance.get('PublicIpAddress', 'N/A'),
                     'ami_id': instance['ImageId'],
-                    'ami_name': get_ami_name(instance['ImageId'])[:21],
+                    'ami_name': get_ami_name(instance['ImageId'], region)[:21],
                     'region': region
                 }
                 instances.append(instance_details)
 
     return instances
 
+def get_instance(instance_id, region):
+    instances = []
+
+    ec2 = session.client('ec2', region_name=region)
+    response = ec2.describe_instances(Filters=[
+        {'Name': 'instance-state-name', 'Values': ['running', 'stopped', 'stopping']},
+        {'Name': 'instance-id', 'Values': [instance_id]}
+        ])
+
+    for reservation in response['Reservations']:
+        for instance in reservation['Instances']:
+            instance_details = {
+                'instance_id': instance['InstanceId'],
+                'instance_state' : instance['State']['Name'],
+                'state_reason' : instance.get('StateTransitionReason', ''),
+                'public_ip': instance.get('PublicIpAddress', 'N/A'),
+                'ami_id': instance['ImageId'],
+                'ami_name': get_ami_name(instance['ImageId'], region)[:21],
+                'region': region
+            }
+            instances.append(instance_details)
+
+    return instances
+
 
 # Ottieni il nome dell'AMI dato il suo ID
-def get_ami_name(ami_id):
+def get_ami_name(ami_id, region):
+    ec2_client = session.client('ec2', region_name=region)
     response = ec2_client.describe_images(ImageIds=[ami_id])
     return response['Images'][0]['Name']
 
@@ -80,8 +107,12 @@ def create_vpn_instance():
     ami_id = get_latest_ami_with_openvpn(region_name=region)
     ec2 = session.resource('ec2', region_name=region)
 
-    key_pair_name = 'vpn-key-pair'
-    private_key_path = './ssh_keys/vpn.pem'
+    # Nome del security group da cercare o creare
+    security_group_name = 'OVPNSecGroup'
+    security_group_id = create_security_group(security_group_name, region)
+
+    key_pair_name = f'vpn-key-pair-{region}'
+    private_key_path = f'./ssh_keys/vpn-key-pair-{region}.pem'
 
     if not os.path.exists(private_key_path):
 
@@ -94,7 +125,6 @@ def create_vpn_instance():
         # Imposta le autorizzazioni del file della chiave privata
         os.chmod(private_key_path, 0o400)
 
-
     # Crea l'istanza EC2 utilizzando l'AMI
     
     instance = ec2.create_instances(
@@ -102,13 +132,88 @@ def create_vpn_instance():
         InstanceType='t3.micro', 
         MinCount=1, 
         MaxCount=1,
-        KeyName=key_pair_name
+        KeyName=key_pair_name,
+        SecurityGroupIds=[security_group_id]
         )[0]
 
     # Configura automaticamente il routing del traffico dal client
     configure_vpn_routing(instance.id)
 
     return 'New OpenVPN instance created'
+
+def create_security_group(security_group_name, region):
+    ec2_client = session.client('ec2', region_name=region)
+
+    # Verifica se il security group esiste già
+    response = ec2_client.describe_security_groups(
+        Filters=[
+            {'Name': 'group-name', 'Values': [security_group_name]}
+        ]
+    )
+
+    if response['SecurityGroups']:
+        # Il security group esiste già, utilizza l'ID esistente
+        security_group_id = response['SecurityGroups'][0]['GroupId']
+    else:
+        # Il security group non esiste, creane uno nuovo
+        response = ec2_client.create_security_group(
+            GroupName=security_group_name,
+            Description='Security group for OpenVPN Seriver'
+        )
+        security_group_id = response['GroupId']
+
+        # Aggiungi le regole di ingresso al security group
+        ec2_client.authorize_security_group_ingress(
+            GroupId=security_group_id,
+            IpPermissions=[
+                {
+                    'IpProtocol': 'tcp',
+                    'FromPort': 22,
+                    'ToPort': 22,
+                    'IpRanges': [{'CidrIp': '0.0.0.0/0'}]
+                },
+                {
+                    'IpProtocol': 'tcp',
+                    'FromPort': 943,
+                    'ToPort': 943,
+                    'IpRanges': [{'CidrIp': '0.0.0.0/0'}]
+                },
+                {
+                    'IpProtocol': 'tcp',
+                    'FromPort': 945,
+                    'ToPort': 945,
+                    'IpRanges': [{'CidrIp': '0.0.0.0/0'}]
+                },
+                {
+                    'IpProtocol': 'udp',
+                    'FromPort': 1194,
+                    'ToPort': 1194,
+                    'IpRanges': [{'CidrIp': '0.0.0.0/0'}]
+                },
+                {
+                    'IpProtocol': 'tcp',
+                    'FromPort': 443,
+                    'ToPort': 443,
+                    'IpRanges': [{'CidrIp': '0.0.0.0/0'}]
+                }
+            ]
+        )
+    return security_group_id
+
+
+
+@app.route('/initialize_server', methods=['POST'])
+def initialize_server():
+    instance_id = request.form['instance_id']
+    region = request.form['region']
+    instance = get_instance(instance_id, region)[0]
+
+    commands = ['sudo ovpn-init --ec2', 'yes', 'yes', '1', 'secp384r1', 'secp384r1', 'secp384r1', '943', '443', 'yes', 'no', 'yes', 'yes', '\n', '\n']
+
+    commands = ['whoami']
+    execute_ssh_commands(instance['public_ip'], 'openvpnas', f'./ssh_keys/vpn-key-pair-{region}.pem', commands)
+
+    return 'Instance initialized successfully'
 
 
 # Ottieni l'AMI più recente per OpenVPN dal marketplace
@@ -214,6 +319,7 @@ def execute_ssh_commands(instance_public_ip, username, private_key_path, command
             print(f'Output of command "{command}":')
             print(output)
             print('---')
+            time.sleep(1)
     finally:
         ssh.close()
 
@@ -221,7 +327,8 @@ def execute_ssh_commands(instance_public_ip, username, private_key_path, command
 @app.route('/start-instance', methods=['POST'])
 def startInstance():
     instance_id = request.form['instance_id']
-    ec2_client = session.client('ec2')
+    region = request.form['region']
+    ec2_client = session.client('ec2', region_name=region)
 
     # Avvia l'istanza specificata
     ec2_client.start_instances(InstanceIds=[instance_id])
@@ -232,7 +339,8 @@ def startInstance():
 @app.route('/stop-instance', methods=['POST'])
 def stopInstance():
     instance_id = request.form['instance_id']
-    ec2_client = session.client('ec2')
+    region = request.form['region']
+    ec2_client = session.client('ec2', region_name=region)
 
     # Ferma l'istanza specificata
     ec2_client.stop_instances(InstanceIds=[instance_id])
@@ -243,7 +351,8 @@ def stopInstance():
 @app.route('/terminate-instance', methods=['POST'])
 def terminateInstance():
     instance_id = request.form['instance_id']
-    ec2_client = session.client('ec2')
+    region = request.form['region']
+    ec2_client = session.client('ec2', region_name=region)
 
     # Termina l'istanza specificata
     ec2_client.terminate_instances(InstanceIds=[instance_id])
